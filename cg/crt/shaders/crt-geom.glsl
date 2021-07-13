@@ -32,7 +32,6 @@
 #pragma parameter overscan_x "CRTGeom Horiz. Overscan %" 100.0 -125.0 125.0 1.0
 #pragma parameter overscan_y "CRTGeom Vert. Overscan %" 100.0 -125.0 125.0 1.0
 #pragma parameter DOTMASK "CRTGeom Dot Mask Toggle" 0.3 0.0 0.3 0.3
-#pragma parameter SHARPER "CRTGeom Sharpness" 1.0 1.0 3.0 1.0
 #pragma parameter scanline_weight "CRTGeom Scanline Weight" 0.3 0.1 0.5 0.01
 #pragma parameter lum "CRTGeom Luminance Boost" 0.0 0.0 1.0 0.01
 #pragma parameter interlace_toggle "CRTGeom Interlacing" 1.0 1.0 5.0 4.0
@@ -50,7 +49,6 @@ uniform float y_tilt;
 uniform float overscan_x;
 uniform float overscan_y;
 uniform float DOTMASK;
-uniform float SHARPER;
 uniform float scanline_weight;
 uniform float lum;
 uniform float interlace_toggle;
@@ -68,7 +66,6 @@ uniform float interlace_toggle;
 #define overscan_x 100.0
 #define overscan_y 100.0
 #define DOTMASK 0.3
-#define SHARPER 1.0
 #define scanline_weight 0.3
 #define lum 0.0
 #define interlace_toggle 1.0
@@ -78,7 +75,10 @@ uniform float interlace_toggle;
 #define mod(x,y) (x - y * trunc(x/y))
 
 // Comment the next line to disable interpolation in linear gamma (and gain speed)
-#define LINEAR_PROCESSING
+// #define LINEAR_PROCESSING
+
+// Use the older, purely gaussian beam profile; uncomment for speed
+#define USEGAUSSIAN
 
 // Enable 3x oversampling of the beam profile; improves moire effect caused by scanlines + curvature
 #define OVERSAMPLE
@@ -150,12 +150,9 @@ float3 maxscale(float4 sin_cos_angle)
 
 struct out_vertex {
   // Additional outputs to guide the frag
-	float2 one : TEXCOORD1;
-	float  mod_factor : TEXCOORD2;
-	float2 ilfac : TEXCOORD3;
-	float3 stretch : TEXCOORD4;
-	float4 sin_cos_angle : TEXCOORD5;
-	float2 textureSize : TEXCOORD6;
+  float4 mod_factor_stretch : TEXCOORD1;
+  float4 ilfac_one : TEXCOORD2;
+	float4 sin_cos_angle : TEXCOORD3;
 };
 
 #if defined(VERTEX)
@@ -190,16 +187,13 @@ void main(
     cosangle.y
   );
 
-  OUT.stretch = maxscale(OUT.sin_cos_angle);
-  OUT.textureSize = float2(SHARPER * TextureSize.x, TextureSize.y);
+  OUT.mod_factor_stretch.x = TexCoord.x * TextureSize.x * OutputSize.x / InputSize.x;
+  OUT.mod_factor_stretch.yzw = maxscale(OUT.sin_cos_angle);
 
-  OUT.ilfac = float2(1.0, clamp(floor(InputSize.y / (200.0 * interlace_toggle)), 1.0, 2.0));
+  OUT.ilfac_one.xy = float2(1.0, clamp(floor(InputSize.y / (200.0 * interlace_toggle)), 1.0, 2.0));
 
   // The size of one texel, in texture-coordinates.
-  OUT.one = OUT.ilfac / OUT.textureSize;
-
-  // Resulting X pixel-coordinate of the pixel we're drawing.
-  OUT.mod_factor = TexCoord.x * TextureSize.x * OutputSize.x / InputSize.x;
+  OUT.ilfac_one.zw = OUT.ilfac_one.xy / TextureSize;
 }
 
 #elif defined(FRAGMENT)
@@ -221,10 +215,17 @@ void main(
 */
 float4 scanlineWeights(float distance, float4 color)
 {
-  float4 wid = 2.0 + 2.0 * pow(color, float4(4.0, 4.0, 4.0, 4.0));
-  float v = distance / scanline_weight;
-  float4 weights = float4(v,v,v,v);
-  return (lum + 1.4) * exp(-pow(weights * rsqrt(0.5 * wid), wid)) / (0.6 + 0.2 * wid);
+  #ifdef USEGAUSSIAN
+    float4 wid = 0.3 + 0.1 * pow(color, float4(3.0, 3.0, 3.0, 3.0));
+    float v = distance / (wid * scanline_weight/0.3);
+    float4 weights = float4(v,v,v,v);
+    return (lum + 0.4) * exp(-weights * weights) / wid;
+  #else
+    float4 wid = 2.0 + 2.0 * pow(color, float4(4.0, 4.0, 4.0, 4.0));
+    float v = distance / scanline_weight;
+    float4 weights = float4(v,v,v,v);
+    return (lum + 1.4) * exp(-pow(weights * rsqrt(0.5 * wid), wid)) / (0.6 + 0.2 * wid);
+  #endif
 }
 
 float4 crt_geom(float2 texture_size, float2 video_size, float2 output_size, float frame_count, float4 sin_cos_angle, float3 stretch,
@@ -376,11 +377,11 @@ void main(
     FrameCount,
 
     VOUT.sin_cos_angle,
-    VOUT.stretch,
-	  VOUT.ilfac,
-    VOUT.one,
-    VOUT.mod_factor,
-    VOUT.textureSize,
+    VOUT.mod_factor_stretch.yzw,
+	  VOUT.ilfac_one.xy,
+    VOUT.ilfac_one.zw,
+    VOUT.mod_factor_stretch.x,
+    TextureSize,
     TexCoord,
 
     vTexture
