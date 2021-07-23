@@ -14,6 +14,11 @@ uniform float smear;
 #define wiggle 3.0
 #define smear 1.0
 
+#endif
+
+/* There's no mod function on HLSL / CG */
+#define mod(x, y) (x - y * floor(x / y))
+
 #if defined(VERTEX)
 void main (
   float2 TexCoord,
@@ -31,8 +36,6 @@ void main (
 #elif defined(FRAGMENT)
 
 #define iTime mod(float(FrameCount), 7.0)
-#define iChannel0 vTexture
-#define mod(x, y) (x - y * floor(x / y))
 
 float3 rgb2yiq(float3 c) {
 	return float3(
@@ -55,7 +58,7 @@ float2 Circle(float Start, float Points, float Point) {
 	return float2(-(0.3 + Rad), cos(Rad));
 }
 
-float3 Blur(float2 uv, float d) {
+float3 Blur(float2 uv, float d, sampler2D iChannel0) {
   float t = 0;
   float b = 1.0;
   float2 PixelOffset = float2(d + .0005 * t, 0);
@@ -131,8 +134,7 @@ void main(
   uniform sampler2D play,
 
   float4 out oColor : COLOR
-)
-{
+) {
   float timer = (float(FrameDirection) > 0.5) ? float(FrameCount) : 0.0;
   float d = 0.1 - ceil(mod(iTime / 3.0, 1.0) + 0.5) * 0.1;
   float2 uv = jumpy(vTexCoord.xy, iTime);
@@ -148,25 +150,25 @@ void main(
   float c = max(0.0001, .002 * d) * smear;
   float2 uvo = uv;
   float4 final;
-  final.xyz = Blur(uv, c + c * (uv.x));
+  final.xyz = Blur(uv, c + c * (uv.x), vTexture);
   float y = rgb2yiq(final.xyz).r;
 
   uv.x += .01 * d;
   c *= 6.0;
-  final.xyz = Blur(uv, c);
+  final.xyz = Blur(uv, c, vTexture);
   float i = rgb2yiq(final.xyz).g;
 
   uv.x += .005 * d;
 
   c *= 2.50;
-  final.xyz = Blur(uv, c);
+  final.xyz = Blur(uv, c, vTexture);
   float q = rgb2yiq(final.xyz).b;
   final = float4(yiq2rgb(float3(y, i, q)) - pow(s + e * 2.0, 3.0), 1.0);
 
   float4 play_osd = tex2D(play, uv2 * TextureSize.xy / InputSize.xy);
-  float show_overlay = (mod(timer, 100.0) < 50.0) && (timer != 0.0) && (timer < 500.0) ? play_osd.a : 0.0;
-  show_overlay = clamp(show_overlay, 0.0, 1.0);
-  final = lerp(final, play_osd, show_overlay);
+	float show_overlay = (mod(timer, 100.0) < 50.0) && (timer != 0.0) && (timer < 500.0) ? play_osd.a : 0.0;
+	show_overlay = clamp(show_overlay, 0.0, 1.0);
+	final = lerp(final, play_osd, show_overlay);
 
   oColor = final;
 }
