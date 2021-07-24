@@ -1,0 +1,7 @@
+shaders = 1
+
+shader0 = shaders/vhs.glsl
+filter_linear0 = true
+
+textures = "play"
+play = resources/play.png
