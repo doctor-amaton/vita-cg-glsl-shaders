@@ -131,7 +131,7 @@ void main(
 
   float2 uv = distort(TexCoord, screenScaleFilterWidth.xy);
 
-  float4 color = crt_nes_mini(TextureSize, TexCoord, vTexture);
+  float4 color = crt_nes_mini(TextureSize, uv, vTexture);
 
   float mask = corner(uv, screenScaleFilterWidth.xy);
 
