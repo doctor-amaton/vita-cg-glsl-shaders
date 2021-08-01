@@ -1,0 +1,4 @@
+shaders = "1"
+
+shader0 = "shaders/scale2xplus.glsl"
+filter_linear0 = "false"
